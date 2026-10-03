@@ -673,10 +673,7 @@ fn render_card_svg(profile: &Profile) -> String {
     }
 
     y += 24;
-    body.push_str(&format!(
-        r#"<text x="{cx}" y="{y}" font-family="sans-serif" font-size="11" fill="rgba({PALETTE_INK_RGB},0.4)" text-anchor="middle">a Freyja offering</text>
-"#
-    ));
+    body.push_str(&offering_footer(cx, y));
 
     let height = y + 24;
 
@@ -985,6 +982,23 @@ async fn publish_card(app: tauri::AppHandle, card_id: String) -> Result<Profile,
 const REFERRAL_HASH: &str = "bizbuz-referral";
 const APP_STORE_URL: &str = "https://apps.apple.com/app/id6808065888";
 
+/// The line at the foot of every published card: who it's from, linking to
+/// the family's apps page. One function so the cards and the invite card
+/// can't drift apart. A plain <a href> survives savage's sanitizer, the same
+/// way contact links do.
+const OFFERING_URL: &str = "https://homeventory.club/apps";
+
+fn offering_footer(cx: impl std::fmt::Display, y: impl std::fmt::Display) -> String {
+    format!(
+        r#"<a href="{OFFERING_URL}"><text x="{cx}" y="{y}" font-family="sans-serif" font-size="11" fill="rgba({PALETTE_INK_RGB},0.4)" text-anchor="middle">A HomeFront offering</text></a>
+"#
+    )
+}
+
+/// Bump when the invite card's design changes, so links already shared get
+/// the new version in place (see get_or_create_referral_link).
+const REFERRAL_DESIGN: u32 = 2;
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 struct ReferralLink {
@@ -1002,6 +1016,10 @@ struct ReferralLink {
     /// tracked — i.e. almost certainly the placeholder, so it gets rewritten.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     app_store_url: Option<String>,
+    /// REFERRAL_DESIGN when this record was last written; 0 (absent) means
+    /// before designs were versioned, which gets rewritten.
+    #[serde(default)]
+    design: u32,
 }
 /// The payout destination getpayed wrote to the shared profile, if the user
 /// has connected Stripe there. Best-effort: no destination simply means a
@@ -1080,6 +1098,7 @@ fn render_referral_svg(app_store_url: &str) -> String {
     const CARD_BACK: &str = PALETTE_GREEN;
 
     let cx = WIDTH / 2;
+    let footer = offering_footer(cx, 400);
     let button_y: u32 = 300;
 
     format!(
@@ -1093,8 +1112,7 @@ fn render_referral_svg(app_store_url: &str) -> String {
 <text x="{cx}" y="240" font-family="sans-serif" font-size="14" fill="rgba({PALETTE_INK_RGB},0.7)" text-anchor="middle">Digital business cards, made simple.</text>
 <text x="{cx}" y="270" font-family="sans-serif" font-size="14" fill="{PURPLE}" text-anchor="middle">You've been invited to try it out.</text>
 <a href="{}"><rect x="{}" y="{button_y}" width="240" height="56" rx="16" fill="{GREEN}"/><text x="{cx}" y="{}" font-family="sans-serif" font-size="18" font-weight="bold" fill="{PALETTE_ON_GREEN}" text-anchor="middle">Get BizBuz</text></a>
-<text x="{cx}" y="400" font-family="sans-serif" font-size="11" fill="rgba({PALETTE_INK_RGB},0.4)" text-anchor="middle">a Freyja offering</text>
-</svg>"#,
+{footer}</svg>"#,
         cx - 90,
         cx - 70,
         cx - 55,
@@ -1119,7 +1137,7 @@ async fn get_or_create_referral_link(app: tauri::AppHandle) -> Result<String, St
     let mut links = read_referral_links(&app);
     if let Some(link) = links.get(&env_key).cloned() {
         // Nothing changed — hand back the link already in circulation.
-        if link.payout == payout && link.app_store_url.as_deref() == Some(APP_STORE_URL) {
+        if link.payout == payout && link.app_store_url.as_deref() == Some(APP_STORE_URL) && link.design >= REFERRAL_DESIGN {
             return Ok(link.share_url.clone());
         }
 
@@ -1136,7 +1154,7 @@ async fn get_or_create_referral_link(app: tauri::AppHandle) -> Result<String, St
             .await
             .map_err(|e| e.to_string())?;
 
-        let updated = ReferralLink { payout, app_store_url: Some(APP_STORE_URL.to_string()), ..link };
+        let updated = ReferralLink { payout, app_store_url: Some(APP_STORE_URL.to_string()), design: REFERRAL_DESIGN, ..link };
         let share_url = updated.share_url.clone();
         links.insert(env_key, updated);
         write_referral_links(&app, &links)?;
@@ -1169,6 +1187,7 @@ async fn get_or_create_referral_link(app: tauri::AppHandle) -> Result<String, St
         share_url: share_url.clone(),
         payout,
         app_store_url: Some(APP_STORE_URL.to_string()),
+        design: REFERRAL_DESIGN,
     };
     links.insert(env_key, link);
     write_referral_links(&app, &links)?;
@@ -1702,5 +1721,24 @@ mod tests {
         std::fs::write("/tmp/bizbuz-referral-sample.svg", &svg).unwrap();
         assert!(!svg.contains("rgba(255,255,255"), "white text on a light card");
         println!("wrote /tmp/bizbuz-referral-sample.svg ({} bytes)", svg.len());
+    }
+}
+
+#[cfg(test)]
+mod offering_footer_tests {
+    use super::*;
+
+    #[test]
+    fn invite_card_says_homefront_and_links_to_the_apps_page() {
+        let svg = render_referral_svg("https://apps.apple.com/app/id1");
+        assert!(svg.contains(r#"<a href="https://homeventory.club/apps">"#), "{svg}");
+        assert!(svg.contains(">A HomeFront offering</text></a>"));
+        assert!(!svg.contains("Freyja"));
+    }
+
+    #[test]
+    fn footer_is_a_link() {
+        let f = offering_footer(200, 400);
+        assert!(f.starts_with(r#"<a href="https://homeventory.club/apps"><text x="200" y="400""#), "{f}");
     }
 }
