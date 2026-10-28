@@ -72,6 +72,28 @@ A third, independent record — separate from `cards.json` entirely — synced v
 
 Adding a field to this record means adding it to **four** Rust structs, or the next app to save deletes it. The struct is intentionally copy-pasted rather than shared as a crate; `canonical_profile_round_trips_payout_key` in each app's `lib.rs` pins the contract by asserting an unknown future field survives a parse-and-save.
 
+### HomeFront identity and the payment pool (October 2026)
+
+Every HomeFront app on a phone acts as one person: a sessionless identity
+in the keychain group `PCUFMY9NKZ.club.home.front`, through
+`src-tauri/tauri-plugin-identity-keychain` (an identity per allyabase
+service, each a keypair plus a uuid per base; `fount` is the first). Its
+private key never reaches the web view. The plugin is copied into each app
+like tauri-plugin-app-group, and the copies must stay identical.
+`build-ios.cjs` and `dev-ios.cjs` write the `keychain-access-groups`
+entitlement beside the App Group; without it every keychain call fails.
+
+- `join_pool` (launch and return to the app) registers the identity with
+  savage's payment pool, which passes its signed Fount create on to Fount,
+  and sends the payout destination GetPayed shared, signed by the identity.
+- `publish_card` writes `fount: { pubKey }` on every card, so savage can
+  credit views of it and App Store taps on it.
+- `report_share` after the vCard share sheet: a share earns once per card a day.
+- "Delete All My Data" leaves the identity alone: it belongs to every
+  HomeFront app on the phone.
+
+See savage/CLAUDE.md "The payment pool" and getpayed/PAYMENT_POOL.md.
+
 ## Build & Deploy
 
 `app/package.json` scripts (each `dev`/`build` runs `predev`/`sync-shared.cjs` first to refresh `src/lib/vcard.js`):

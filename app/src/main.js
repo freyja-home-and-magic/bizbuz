@@ -655,6 +655,9 @@ async function shareCard(card) {
         contents: vcard,
         mimeType: 'text/vcard',
     });
+    // Sharing your own card earns a nineum in the payment pool (once a day
+    // per card). Best effort: the share already happened either way.
+    core.invoke('report_share', { cardId: card.id }).catch(() => {});
 }
 
 document.getElementById('share-btn').addEventListener('click', async () => {
@@ -758,8 +761,18 @@ referralConnectBtn.addEventListener('click', async () => {
     }
 });
 
+// The payment pool: registers this phone's HomeFront identity (shared by
+// every HomeFront app) and, once GetPayed is connected, where its earnings
+// go. Quiet on failure; the next launch tries again.
+function joinPool() {
+    core.invoke('join_pool').catch(() => {});
+}
+
 document.addEventListener('visibilitychange', () => {
-    if (!document.hidden) refreshReferral();
+    if (!document.hidden) {
+        refreshReferral();
+        joinPool();
+    }
 });
 
 // ── Reset all data (testing) ─────────────────────────────────────────────────
@@ -1140,6 +1153,7 @@ async function init() {
     renderStatePicker();
     await loadCards();
     refreshReferral();
+    joinPool();
     backgroundPublishAllCards();
 }
 
