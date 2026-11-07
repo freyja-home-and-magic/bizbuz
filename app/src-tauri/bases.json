@@ -1,0 +1,11 @@
+{
+  "$comment": [
+    "BizBuz is the one app in the family whose base is per-INSTALL, not compiled in: the state on a user's first card picks <state>.8as.world and that is pinned for the life of the install. So there is no single gateway constant to switch.",
+    "`forceHost` is the switch instead. Empty (prod builds) leaves the per-state behaviour exactly as it was. Set (dev builds) makes every install talk to that host whatever state its card names, which is what 'this build points at dev' has to mean here.",
+    "Odd build numbers are built against dev, even against prod. scripts/build-ios.cjs enforces that pairing; see BUILD_PARITY there.",
+    "A forced build records its pin as build-force:<env> so a later prod build can tell its publishes apart from a genuine pre-per-state-bases install, which would otherwise look identical and strand the user on dev."
+  ],
+  "prod": { "forceHost": "" },
+  "dev": { "forceHost": "dev.8as.world" },
+  "test": { "aliasOf": "dev" }
+}

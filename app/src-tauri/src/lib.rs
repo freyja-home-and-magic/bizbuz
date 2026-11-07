@@ -63,6 +63,28 @@ const LEGACY_BASE_HOST: &str = "dev.8as.world";
 /// one of the fifty. Not a per-state base.
 const FALLBACK_BASE_HOST: &str = "prod.8as.world";
 
+/// Which env this build was compiled for, and the host it forces every
+/// install onto. Empty on a prod build, which leaves everything below exactly
+/// as it was; set on a dev build (see bases.json and build.rs).
+///
+/// BizBuz is the only app in the family whose base is per-install rather than
+/// a compiled-in constant, so "this build points at dev" cannot be a URL
+/// swap here — it has to override the pinning, or a dev build would still
+/// send anyone with a real state to their per-state prod base and only be
+/// half a dev build.
+const BUILD_ENV: &str = env!("BIZBUZ_BUILD_ENV");
+const FORCE_BASE_HOST: &str = env!("FORCE_BASE_HOST");
+
+/// Logged once when the base is settled, which is also what puts this string
+/// in the binary for scripts/build-ios.cjs to find. Verifying BizBuz by URL
+/// isn't possible — `dev.8as.world` is LEGACY_BASE_HOST and ships in every
+/// build — so the marker is the evidence.
+const BASE_MARKER: &str = env!("BASE_MARKER");
+
+/// Marks a pin written because the build forced it rather than because a
+/// card's state chose it.
+const FORCED_PIN_PREFIX: &str = "build-force:";
+
 fn base_host_to_env_key(host: &str) -> String {
     host.replace('.', "-")
 }
@@ -129,6 +151,18 @@ fn write_base(app: &tauri::AppHandle, record: &BaseRecord) -> Result<(), String>
 /// True if this install published anything before per-state bases existed.
 /// Those uuids live on LEGACY_BASE_HOST and resolve nowhere else, so such an
 /// install has to stay there — the alternative is orphaning live share links.
+/// Whether the pin on disk was written by a forced (dev) build. A prod build
+/// treats such a pin as no pin at all, and also disregards what that build
+/// published when deciding whether this is a legacy install — without this,
+/// a device that ran an odd build and then an even one would look exactly
+/// like a pre-per-state-bases install (uuids under the dev env key) and get
+/// stranded on dev.
+fn pinned_by_forced_build(app: &tauri::AppHandle) -> bool {
+    read_base(app)
+        .map(|r| r.established_by.starts_with(FORCED_PIN_PREFIX))
+        .unwrap_or(false)
+}
+
 fn has_legacy_publishes(app: &tauri::AppHandle) -> bool {
     let legacy_key = base_host_to_env_key(LEGACY_BASE_HOST);
     read_cards(app)
@@ -144,11 +178,29 @@ fn has_legacy_publishes(app: &tauri::AppHandle) -> bool {
 /// legacy base before any state is consulted, so upgrading never moves a user
 /// whose cards are already live somewhere.
 fn established_base(app: &tauri::AppHandle) -> String {
-    if let Some(record) = read_base(app) {
+    println!("{BASE_MARKER}");
+
+    // A forced build overrides whatever is pinned, and records that it did.
+    // Recording it is the point: the uuids it publishes land under the dev
+    // env key, which is indistinguishable from a legacy install's unless the
+    // pin says where they came from.
+    if !FORCE_BASE_HOST.is_empty() {
+        let record = BaseRecord {
+            host: FORCE_BASE_HOST.to_string(),
+            established_by: format!("{FORCED_PIN_PREFIX}{BUILD_ENV}"),
+        };
+        let _ = write_base(app, &record);
         return record.host;
     }
 
-    let record = if has_legacy_publishes(app) {
+    let forced = pinned_by_forced_build(app);
+    if !forced {
+        if let Some(record) = read_base(app) {
+            return record.host;
+        }
+    }
+
+    let record = if has_legacy_publishes(app) && !forced {
         BaseRecord {
             host: LEGACY_BASE_HOST.to_string(),
             established_by: "legacy-publish".to_string(),
@@ -184,7 +236,13 @@ fn established_base(app: &tauri::AppHandle) -> String {
 /// card is saved, so the FIRST card's state is what establishes the base —
 /// later cards, in other states, don't move an install that's already pinned.
 fn establish_base_from_state(app: &tauri::AppHandle, state: Option<&str>) {
-    if read_base(app).is_some() || has_legacy_publishes(app) {
+    // A forced build's base doesn't come from state at all; established_base
+    // pins it, and a state must not overwrite that pin.
+    if !FORCE_BASE_HOST.is_empty() {
+        return;
+    }
+    let forced = pinned_by_forced_build(app);
+    if !forced && (read_base(app).is_some() || has_legacy_publishes(app)) {
         return;
     }
     let Some(state) = state.map(str::trim).filter(|s| !s.is_empty()) else {
@@ -1608,7 +1666,7 @@ async fn import_from_linkitylink(app: tauri::AppHandle) -> Result<ImportFromLink
 //
 // A third, independent record — separate from this app's own CardsStore —
 // holding "all of the user's information" in one place, shared verbatim
-// across every app in group.freyja.idothis via the App Group plugin. Not
+// across every app in group.club.home.front via the App Group plugin. Not
 // wired into save_card/publish_card in any way; editing it never touches
 // cards.json.
 
@@ -1766,8 +1824,32 @@ async fn save_canonical_profile(app: tauri::AppHandle, mut profile: CanonicalPro
 // value back out to JS. See the frontend for the matching removal of
 // syncQuickActions/checkPendingQuickAction.
 
+// ── Who is calling ───────────────────────────────────────────────────────────
+//
+// Sent as `x-homefront-app-version` on every outbound request, from this app
+// and from the shared clients it links. The point is that a base can tell its
+// callers apart: nginx can route one specific build somewhere else without the
+// app knowing, which is how an App Store reviewer's build gets pointed at a
+// demo base during review.
+//
+// Version comes from Cargo (kept in step with tauri.conf.json and
+// package.json; those three must agree or the build lands in the wrong
+// folder), and the build number from .build-number via build.rs, so this is
+// exactly the CFBundleVersion that ships.
+const APP_VERSION_HEADER: &str = concat!(
+    "bizbuz/", env!("CARGO_PKG_VERSION"), "+", env!("APP_BUILD_NUMBER")
+);
+
+/// Tells every shared client who we are. Called once, before anything can
+/// make a request.
+fn announce_app_version() {
+    bdo_rs::set_app_version(APP_VERSION_HEADER);
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    announce_app_version();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_share_sheet::init())
         .plugin(tauri_plugin_app_group::init())
@@ -1806,6 +1888,31 @@ mod tests {
     /// this app must not drop it (the carry-forward in
     /// save_canonical_profile), because this app has no UI for it and
     /// always sends None.
+
+    /// The two halves of the parity scheme, from BizBuz's side. A prod build has
+    /// to leave per-state bases completely alone — that is the whole product —
+    /// and a dev build has to override them for everyone, or it would send any
+    /// user with a real state to their per-state PROD base and only be half a
+    /// dev build while looking like a whole one.
+    #[test]
+    fn a_dev_build_forces_one_base_and_a_prod_build_does_not() {
+        match BUILD_ENV {
+            "dev" | "test" => assert_eq!(
+                FORCE_BASE_HOST, "dev.8as.world",
+                "a dev build must force every install onto dev"
+            ),
+            _ => {
+                assert!(
+                    FORCE_BASE_HOST.is_empty(),
+                    "a prod build must not force a base, or per-state bases are dead"
+                );
+                assert_eq!(base_host_for_state(Some("CA")), "ca.8as.world");
+                assert_eq!(base_host_for_state(Some("or")), "or.8as.world");
+                assert_eq!(base_host_for_state(Some("DC")), FALLBACK_BASE_HOST);
+                assert_eq!(base_host_for_state(None), FALLBACK_BASE_HOST);
+            }
+        }
+    }
     #[test]
     fn canonical_profile_round_trips_payout_key() {
         // Exactly what getpayed writes, including fields this app knows

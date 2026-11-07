@@ -2211,10 +2211,10 @@
       "description": "Permission identifier",
       "oneOf": [
         {
-          "description": "Default permissions for the app-group plugin. Allows reading/writing a single JSON string shared between BizBuz and Linkitylink via the group.freyja.idothis App Group.\n#### This default permission set includes:\n\n- `allow-write-value`\n- `allow-read-value`",
+          "description": "Default permissions for the app-group plugin. Allows reading/writing a single JSON string shared across the HomeFront apps via the group.club.home.front App Group.\n#### This default permission set includes:\n\n- `allow-write-value`\n- `allow-read-value`",
           "type": "string",
           "const": "app-group:default",
-          "markdownDescription": "Default permissions for the app-group plugin. Allows reading/writing a single JSON string shared between BizBuz and Linkitylink via the group.freyja.idothis App Group.\n#### This default permission set includes:\n\n- `allow-write-value`\n- `allow-read-value`"
+          "markdownDescription": "Default permissions for the app-group plugin. Allows reading/writing a single JSON string shared across the HomeFront apps via the group.club.home.front App Group.\n#### This default permission set includes:\n\n- `allow-write-value`\n- `allow-read-value`"
         },
         {
           "description": "Enables the read_value command without any pre-configured scope.",
@@ -6073,6 +6073,24 @@
           "type": "string",
           "const": "fs:write-files",
           "markdownDescription": "This enables all file write related commands without any pre-configured accessible paths."
+        },
+        {
+          "description": "Default permissions for identity-keychain. Lets the web view read the PUBLIC half of an identity (pubKey and uuids); private keys never leave Rust.\n#### This default permission set includes:\n\n- `allow-public-identity`",
+          "type": "string",
+          "const": "identity-keychain:default",
+          "markdownDescription": "Default permissions for identity-keychain. Lets the web view read the PUBLIC half of an identity (pubKey and uuids); private keys never leave Rust.\n#### This default permission set includes:\n\n- `allow-public-identity`"
+        },
+        {
+          "description": "Enables the public_identity command without any pre-configured scope.",
+          "type": "string",
+          "const": "identity-keychain:allow-public-identity",
+          "markdownDescription": "Enables the public_identity command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the public_identity command without any pre-configured scope.",
+          "type": "string",
+          "const": "identity-keychain:deny-public-identity",
+          "markdownDescription": "Denies the public_identity command without any pre-configured scope."
         },
         {
           "description": "Default permissions for the share-sheet plugin. Allows presenting the native share sheet with a generated file or a plain text/URL.\n#### This default permission set includes:\n\n- `allow-share-file`\n- `allow-share-text`",

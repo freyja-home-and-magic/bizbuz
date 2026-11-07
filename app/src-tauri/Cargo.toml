@@ -1,6 +1,6 @@
 [package]
 name = "bizbuz"
-version = "0.3.0"
+version = "0.4.1"
 description = "BizBuz — create your digital business card and share it"
 authors = ["Freyja - Love and Magic"]
 edition = "2021"
@@ -11,6 +11,8 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
+# build.rs reads bases.json to pick this build's base override.
+serde_json = "1.0"
 
 [dependencies]
 tauri = { version = "2", features = [] }
