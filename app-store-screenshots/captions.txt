@@ -1,0 +1,13 @@
+# One line per screenshot in originals/: NN|Headline|Subhead
+#
+# Blank subhead is allowed (NN|Headline|). A screenshot with no line here is
+# rendered full-bleed, uncaptioned, the way the set looked before.
+#
+# House style: no em dashes in user-facing copy. Keep headlines under about
+# 34 characters or they wrap to two lines, which pushes the capture down and
+# shrinks it. Two lines still lay out correctly, it just costs height.
+
+01|Up to four cards|Work, personal, side hustle. Kept separate.
+02|Your profile, on your device|Publishing is a choice, not a default.
+03|One card, every detail|Contact info, location, and your socials.
+04|Share as a link or a vCard|Or hand it straight to another app.
